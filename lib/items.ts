@@ -13,12 +13,23 @@ export type Item = {
   tags?: string[];
 };
 
+// Type guard para eliminar nulls
+function isNotNull<T>(value: T | null): value is T {
+  return value !== null;
+}
+
 export function getAllItems(): Item[] {
+  if (!fs.existsSync(itemsDirectory)) {
+    return [];
+  }
+
   const folders = fs.readdirSync(itemsDirectory);
 
-  return folders
+  const items = folders
     .map((folder) => {
       const fullPath = path.join(itemsDirectory, folder);
+
+      // Solo procesar carpetas
       if (!fs.statSync(fullPath).isDirectory()) return null;
 
       const detailsPath = path.join(fullPath, 'details.md');
@@ -27,24 +38,32 @@ export function getAllItems(): Item[] {
       const fileContents = fs.readFileSync(detailsPath, 'utf8');
       const { data, content } = matter(fileContents);
 
-      // Buscar la imagen de portada
-      const coverFile = fs.readdirSync(fullPath)
-        .find(file => file.startsWith('cover.'));
+      // Buscar archivo de portada (cover.png, cover.gif, cover.jpg, etc.)
+      const filesInFolder = fs.readdirSync(fullPath);
+      const coverFile = filesInFolder.find(file => 
+        file.startsWith('cover.')
+      );
+
+      if (!coverFile) return null;
 
       return {
         slug: folder,
-        title: data.title || folder,
-        date: data.date || '',
-        tags: data.tags || [],
+        title: (data.title as string) || folder.replace(/-/g, ' '),
+        date: (data.date as string) || '',
+        tags: (data.tags as string[]) || [],
         cover: `/items/\( {folder}/ \){coverFile}`,
-        content,
+        content: content.trim(),
       };
     })
-    .filter((item): item is Item => item !== null)
-    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    .filter(isNotNull);   // ← Esto arregla el error de tipos
+
+  // Ordenar por fecha (más nuevo primero)
+  return items.sort((a, b) => 
+    new Date(b.date).getTime() - new Date(a.date).getTime()
+  );
 }
 
 export function getItemBySlug(slug: string): Item | null {
-  // Similar lógica pero para un solo item
-  // ...
-           }
+  const items = getAllItems();
+  return items.find(item => item.slug === slug) || null;
+}
